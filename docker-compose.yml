@@ -1,0 +1,93 @@
+services:
+  database:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gmail_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-gmail_monitor}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-gmail_app} -d ${POSTGRES_DB:-gmail_monitor}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-gmail_app}:${POSTGRES_PASSWORD:-local_dev_password}@database:5432/${POSTGRES_DB:-gmail_monitor}?schema=public
+      APP_PASSPHRASE: ${APP_PASSPHRASE:?Set APP_PASSPHRASE in Backend\.env}
+      APP_SESSION_SECRET: ${APP_SESSION_SECRET:?Set APP_SESSION_SECRET in Backend\.env}
+      GMAIL_TOKEN_ENCRYPTION_KEY: ${GMAIL_TOKEN_ENCRYPTION_KEY:?Set GMAIL_TOKEN_ENCRYPTION_KEY in Backend\.env}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set Google OAuth credentials in Backend\.env}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set Google OAuth credentials in Backend\.env}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      GMAIL_REDIRECT_URI: ${GMAIL_REDIRECT_URI:-http://localhost:3000/api/gmail/callback}
+      GMAIL_SYNC_DEFAULT_LIMIT: ${GMAIL_SYNC_DEFAULT_LIMIT:-25}
+      GMAIL_SYNC_MAX_LIMIT: ${GMAIL_SYNC_MAX_LIMIT:-100}
+      GMAIL_AUTO_SYNC_LIMIT: ${GMAIL_AUTO_SYNC_LIMIT:-25}
+      GMAIL_AUTO_SYNC_INTERVAL_MS: ${GMAIL_AUTO_SYNC_INTERVAL_MS:-60000}
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-mock}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-}
+      WHATSAPP_TEMPLATE_NAME: ${WHATSAPP_TEMPLATE_NAME:-}
+      WHATSAPP_TEMPLATE_LANGUAGE: ${WHATSAPP_TEMPLATE_LANGUAGE:-en_US}
+      AI_ENABLED: ${AI_ENABLED:-false}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      OLLAMA_TIMEOUT_MS: ${OLLAMA_TIMEOUT_MS:-10000}
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "fetch('http://localhost:3001/health').then((response) => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ../Frontend
+    restart: unless-stopped
+    environment:
+      BACKEND_API_URL: http://backend:3001
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ai"]
+    restart: unless-stopped
+    environment:
+      OLLAMA_NO_CLOUD: "1"
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  postgres_data:
+  ollama_data:

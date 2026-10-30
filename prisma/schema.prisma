@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EmailCategory {
+  LINKEDIN_NOTIFICATION
+  JOB_OPPORTUNITY
+  RECRUITER
+  COMPANY
+  PERSONAL
+  OTHER
+}
+
+enum EmailCategorySource {
+  RULE
+  MANUAL
+}
+
+model Email {
+  id            String        @id @default(cuid())
+  gmailMessageId String        @unique
+  threadId      String?
+  senderEmail   String?
+  senderName    String?
+  subject       String
+  snippet       String?       @db.Text
+  body          String?       @db.Text
+  receivedAt            DateTime
+  isRead                Boolean       @default(false)
+  category              EmailCategory @default(OTHER)
+  categorySource        EmailCategorySource @default(RULE)
+  classificationReason  String?       @db.Text
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@index([category, receivedAt])
+  @@index([receivedAt])
+  @@index([isRead])
+}
+
+model GmailConnection {
+  id                    String   @id @default("primary")
+  accountEmail          String
+  accessTokenEncrypted  String   @db.Text
+  refreshTokenEncrypted String?  @db.Text
+  expiresAt             DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model GmailOAuthState {
+  stateHash String   @id
+  sessionId String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum NotificationType {
+  WHATSAPP_ALERT
+  TEST
+}
+
+model Notification {
+  id              String             @id @default(cuid())
+  emailId         String?
+  gmailMessageId  String?
+  type            NotificationType   @default(WHATSAPP_ALERT)
+  recipient       String
+  sender          String?
+  subject         String
+  category        EmailCategory?
+  preview         String             @db.Text
+  status          NotificationStatus @default(PENDING)
+  retryCount      Int                @default(0)
+  maxRetries      Int                @default(3)
+  errorDetails    String?            @db.Text
+  provider        String             @default("mock")
+  metadata        Json?
+  sentAt          DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@unique([gmailMessageId, type])
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+model NotificationConfig {
+  id                     String   @id @default("primary")
+  enabledCategories      String[] @default(["LINKEDIN_NOTIFICATION"])
+  rules                  Json     @default("[]")
+  recipientPhone         String   @default("+917994811405")
+  maxSnippetLength       Int      @default(150)
+  initialSyncCutoffHours Int      @default(24)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
